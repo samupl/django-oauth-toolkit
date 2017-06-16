@@ -8,6 +8,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import FormView, View
 
+from ..signals import app_authorized
 from .mixins import OAuthLibMixin
 from ..exceptions import OAuthToolkitError
 from ..forms import AllowForm
@@ -77,6 +78,16 @@ class AuthorizationView(BaseAuthorizationView, FormView):
 
     skip_authorization_completely = False
 
+    def signal_authorization(self, request, app):
+        """
+        Send a signal about successful authorization
+        :param django.http.HttpRequest request: Django request instance
+        :param ..models.AbstractApplication app: Application instance
+        """
+        app_authorized.send(
+            sender=request.user.__class__, request=request, user=request.user,
+            app=app)
+
     def get_initial(self):
         # TODO: move this scopes conversion from and to string into a utils function
         scopes = self.oauth2_data.get("scope", self.oauth2_data.get("scopes", []))
@@ -143,6 +154,7 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                 uri, headers, body, status = self.create_authorization_response(
                     request=self.request, scopes=" ".join(scopes),
                     credentials=credentials, allow=True)
+                self.signal_authorization(request=request, app=application)
                 return HttpResponseUriRedirect(uri)
 
             elif require_approval == "auto":
@@ -158,6 +170,8 @@ class AuthorizationView(BaseAuthorizationView, FormView):
                         uri, headers, body, status = self.create_authorization_response(
                             request=self.request, scopes=" ".join(scopes),
                             credentials=credentials, allow=True)
+                        self.signal_authorization(request=request,
+                                                  app=application)
                         return HttpResponseUriRedirect(uri)
 
             return self.render_to_response(self.get_context_data(**kwargs))
